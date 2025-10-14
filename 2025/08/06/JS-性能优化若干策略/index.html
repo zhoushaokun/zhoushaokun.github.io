@@ -1,0 +1,164 @@
+<!DOCTYPE html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>JS 性能优化若干策略 | isaac</title><meta name="author" content="Isaac"><meta name="copyright" content="Isaac"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="背景当一个应用的使用用户达到一定程度，必定会遇到一些极端的场景，比如某些业务数据极其大、或者某些步骤耗时极其长，以至于在现有的代码逻辑下很难运行，或导致页面转圈甚至 UI 卡顿，或者导致内存溢出。笔者将自己所遇到的一些性能问题及一些优化策略进行整理，希望能够对各位有所帮助。 引入假设有这样的场景，给定一个 4GB 的文件， 耗时请求&amp;需要频繁请求本质上是因为接口设计不合理。这个优化的场景本">
+<meta property="og:type" content="article">
+<meta property="og:title" content="JS 性能优化若干策略">
+<meta property="og:url" content="https://zhoushaokun.github.io/2025/08/06/JS-%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E8%8B%A5%E5%B9%B2%E7%AD%96%E7%95%A5/index.html">
+<meta property="og:site_name" content="isaac">
+<meta property="og:description" content="背景当一个应用的使用用户达到一定程度，必定会遇到一些极端的场景，比如某些业务数据极其大、或者某些步骤耗时极其长，以至于在现有的代码逻辑下很难运行，或导致页面转圈甚至 UI 卡顿，或者导致内存溢出。笔者将自己所遇到的一些性能问题及一些优化策略进行整理，希望能够对各位有所帮助。 引入假设有这样的场景，给定一个 4GB 的文件， 耗时请求&amp;需要频繁请求本质上是因为接口设计不合理。这个优化的场景本">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://zhoushaokun.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-08-06T14:03:18.000Z">
+<meta property="article:modified_time" content="2025-08-06T14:24:25.869Z">
+<meta property="article:author" content="Isaac">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://zhoushaokun.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "JS 性能优化若干策略",
+  "url": "https://zhoushaokun.github.io/2025/08/06/JS-%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E8%8B%A5%E5%B9%B2%E7%AD%96%E7%95%A5/",
+  "image": "https://zhoushaokun.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-08-06T14:03:18.000Z",
+  "dateModified": "2025-08-06T14:24:25.869Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Isaac",
+      "url": "https://zhoushaokun.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://zhoushaokun.github.io/2025/08/06/JS-%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E8%8B%A5%E5%B9%B2%E7%AD%96%E7%95%A5/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: undefined,
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":false},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'JS 性能优化若干策略',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 7.3.0"></head><body><div id="web_bg" style="background-image: url(/assets/blog-bg.png);"></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><span class="site-name">isaac</span></a><a class="nav-page-title" href="/"><span class="site-name">JS 性能优化若干策略</span></a></span><div id="menus"></div></nav><div id="post-info"><h1 class="post-title">JS 性能优化若干策略</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">Created</span><time class="post-meta-date-created" datetime="2025-08-06T14:03:18.000Z" title="Created 2025-08-06 22:03:18">2025-08-06</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">Updated</span><time class="post-meta-date-updated" datetime="2025-08-06T14:24:25.869Z" title="Updated 2025-08-06 22:24:25">2025-08-06</time></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">Post Views:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h2><p>当一个应用的使用用户达到一定程度，必定会遇到一些极端的场景，比如某些业务数据极其大、或者某些步骤耗时极其长，以至于在现有的代码逻辑下很难运行，或导致页面转圈甚至 UI 卡顿，或者导致内存溢出。笔者将自己所遇到的一些性能问题及一些优化策略进行整理，希望能够对各位有所帮助。</p>
+<h2 id="引入"><a href="#引入" class="headerlink" title="引入"></a>引入</h2><p>假设有这样的场景，给定一个 4GB 的文件，</p>
+<h3 id="耗时请求-需要频繁请求"><a href="#耗时请求-需要频繁请求" class="headerlink" title="耗时请求&amp;需要频繁请求"></a>耗时请求&amp;需要频繁请求</h3><p>本质上是因为接口设计不合理。这个优化的场景本可以避免，其原因，通常和数据结构和资源提供方的算法设计有关，对于频繁请求接口的场景，应该要把接口设计的轻量些。举例，比如页面列表+列表详情的情况，我们会单独提供一个能够获取列表简略信息的轻量接口，这样即使</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://zhoushaokun.github.io">Isaac</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://zhoushaokun.github.io/2025/08/06/JS-%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E8%8B%A5%E5%B9%B2%E7%AD%96%E7%95%A5/">https://zhoushaokun.github.io/2025/08/06/JS-%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E8%8B%A5%E5%B9%B2%E7%AD%96%E7%95%A5/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related" href="/2025/05/28/AbortController-%E4%BD%BF%E7%94%A8/" title="AbortController 终止异步请求"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info"><div class="info-1"><div class="info-item-1">Previous</div><div class="info-item-2">AbortController 终止异步请求</div></div><div class="info-2"><div class="info-item-1">背景在 Web 开发中，处理异步请求（常见于 fetch 等 io 操作）时，通常需要在修改状态（如即时检索的场景）、销毁组件（如退出页面的场景），终止当前不再需要的请求，以节省当前机器的资源消耗，达到性能优化的目的。而 Web 环境下的 JavaScript 则提供了 AbortController 的原生接口，为解决这一问题提供了优雅的方案。本文将介绍它的核心用法、适用场景及示例代码。 什么是 AbortController？AbortController 是一个用于中止一个或多个 Web 请求的 web API。它通过 AbortSignal 对象与异步操作（如 fetch）进行通信，从而是开发者能够在需要时主动终止请求。 最常见的场景就是数据请求的竞态处理中，稍后本文会给出相应的例子介绍。 核心概念 AbortController.abort(): 触发中止操作。  AbortController.signal: 传递给异步任务的信号对象，用于异步请求监听中止事件。   使用场景基础使用123456789101112131415161718192021// 创建...</div></div></div></a><a class="pagination-related" href="/2025/10/14/%E6%97%A0%E9%9C%80%E6%94%BE%E5%BC%83%E5%8F%98%E6%9B%B4%E3%80%81%E5%85%B3%E9%97%AD%E5%8D%A0%E7%94%A8%E7%A8%8B%E5%BA%8F%EF%BC%81%E7%94%A8%E6%9A%82%E5%AD%98%E5%8C%BA%E5%92%8C-git%E5%BA%95%E5%B1%82%E5%91%BD%E4%BB%A4%E5%AE%9E%E7%8E%B0-Git-%E5%8F%98%E6%9B%B4%E5%A4%87%E4%BB%BD/" title="无需放弃变更、关闭占用程序！用暂存区和 git底层命令实现 Git 变更备份"><img class="cover" src="/assets/git_backup_without_discard.png" onerror="onerror=null;src='/img/404.jpg'" alt="cover of next post"><div class="info text-right"><div class="info-1"><div class="info-item-1">Next</div><div class="info-item-2">无需放弃变更、关闭占用程序！用暂存区和 git底层命令实现 Git 变更备份</div></div><div class="info-2"><div class="info-item-1">无需放弃变更、关闭占用程序！用暂存区和 git底层命令实现 Git 变更备份前言在日常开发中，git stash虽为我们备份数据的常用命令，但其操作过程需要放弃当前的变更，这对于win平台下编辑二进制资源时会造成很多麻烦，由于主程序会对修改的二进制资源进行占用，此时执行储藏大概率会报错，如果想要储藏成功，就需要关闭引擎，然后再操作储藏，才能完成数据的备份，整个操作流程相当繁重耗时。 而本文则将介绍一种更灵活轻便的 git仓库变更数据的备份方案：通过暂存区（Index） 与git create-commit等底层 git 命令，手动构建出stash的提交，从而在不放弃任何变更，也不需要关闭占用程序前提下，完成工作区变更数据的备份，从而提高研发效率。 问题使用 git 进行版本控制时，通常会在工作区产生变更，而某些情况我们不想要提交而仅想要备份一下修改的数据，常规的做法是git stash，它会自动打包这些状态并自动将工作区的状态清空，但是这个过程无法干预，并且如果出现变更文件被其他程序占用（例如打开并修改的 excel 文件），就会导致储藏失败。 如下，当一个...</div></div></div></a></nav></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">Isaac</div><div class="author-info-description"></div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">5</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">0</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">0</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/xxxxxx"><i class="fab fa-github"></i><span>Follow Me</span></a></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>Announcement</span></div><div class="announcement_content">This is my Blog</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>Contents</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%83%8C%E6%99%AF"><span class="toc-number">1.</span> <span class="toc-text">背景</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%BC%95%E5%85%A5"><span class="toc-number">2.</span> <span class="toc-text">引入</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%80%97%E6%97%B6%E8%AF%B7%E6%B1%82-%E9%9C%80%E8%A6%81%E9%A2%91%E7%B9%81%E8%AF%B7%E6%B1%82"><span class="toc-number">2.1.</span> <span class="toc-text">耗时请求&amp;需要频繁请求</span></a></li></ol></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/2025/10/14/%E6%97%A0%E9%9C%80%E6%94%BE%E5%BC%83%E5%8F%98%E6%9B%B4%E3%80%81%E5%85%B3%E9%97%AD%E5%8D%A0%E7%94%A8%E7%A8%8B%E5%BA%8F%EF%BC%81%E7%94%A8%E6%9A%82%E5%AD%98%E5%8C%BA%E5%92%8C-git%E5%BA%95%E5%B1%82%E5%91%BD%E4%BB%A4%E5%AE%9E%E7%8E%B0-Git-%E5%8F%98%E6%9B%B4%E5%A4%87%E4%BB%BD/" title="无需放弃变更、关闭占用程序！用暂存区和 git底层命令实现 Git 变更备份"><img src="/assets/git_backup_without_discard.png" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="无需放弃变更、关闭占用程序！用暂存区和 git底层命令实现 Git 变更备份"/></a><div class="content"><a class="title" href="/2025/10/14/%E6%97%A0%E9%9C%80%E6%94%BE%E5%BC%83%E5%8F%98%E6%9B%B4%E3%80%81%E5%85%B3%E9%97%AD%E5%8D%A0%E7%94%A8%E7%A8%8B%E5%BA%8F%EF%BC%81%E7%94%A8%E6%9A%82%E5%AD%98%E5%8C%BA%E5%92%8C-git%E5%BA%95%E5%B1%82%E5%91%BD%E4%BB%A4%E5%AE%9E%E7%8E%B0-Git-%E5%8F%98%E6%9B%B4%E5%A4%87%E4%BB%BD/" title="无需放弃变更、关闭占用程序！用暂存区和 git底层命令实现 Git 变更备份">无需放弃变更、关闭占用程序！用暂存区和 git底层命令实现 Git 变更备份</a><time datetime="2025-10-14T14:54:08.000Z" title="Created 2025-10-14 22:54:08">2025-10-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2025/08/06/JS-%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E8%8B%A5%E5%B9%B2%E7%AD%96%E7%95%A5/" title="JS 性能优化若干策略">JS 性能优化若干策略</a><time datetime="2025-08-06T14:03:18.000Z" title="Created 2025-08-06 22:03:18">2025-08-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2025/05/28/AbortController-%E4%BD%BF%E7%94%A8/" title="AbortController 终止异步请求">AbortController 终止异步请求</a><time datetime="2025-05-28T01:46:08.000Z" title="Created 2025-05-28 09:46:08">2025-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2025/05/28/git-svn-%E9%97%AE%E9%A2%98%E8%AE%B0%E5%BD%95/" title="git svn 问题记录">git svn 问题记录</a><time datetime="2025-05-28T01:39:21.000Z" title="Created 2025-05-28 09:39:21">2025-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2025/05/08/%E5%88%9B%E5%BB%BA%E4%B8%80%E4%B8%AA-hexo-%E4%B8%AA%E4%BA%BA%E5%8D%9A%E5%AE%A2%E8%AE%B0%E5%BD%95/" title="创建个人博客——hexo + bufferfly + atom pages实现">创建个人博客——hexo + bufferfly + atom pages实现</a><time datetime="2025-05-08T14:52:23.000Z" title="Created 2025-05-08 22:52:23">2025-05-08</time></div></div></div></div></div></div></main><footer id="footer" style="background-image: url(/assets/blog-bg.png);"><div id="footer-wrap"><div class="copyright">&copy;2025 By Isaac</div><div class="framework-info"><span>Framework </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo 7.3.0</a><span class="footer-separator">|</span><span>Theme </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly 5.3.5</a></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="Table of Contents"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js"></script><script src="/js/main.js"></script><div class="js-pjax"></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script></div></body></html>
